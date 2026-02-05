@@ -1,10 +1,10 @@
 ## 📅 2026年2月5日時点：学習及び作成中
 Note: 本プロジェクトは現在開発および学習のフェーズにあります。機能の追加やドキュメントの更新が頻繁に行われる可能性があります
-## [2026/02/05] BERT-base-japanese-v3 によるモデル構築完了
+### [2026/02/05] BERT-base-japanese-v3 によるモデル構築完了
 
-## [2026/02/05] 学習成功（Accuracy: 83.8%）Loss（誤差）0.34
+### [2026/02/05] 学習成功（Accuracy: 83.8%）Loss（誤差）0.34
 
-## [Now] AndroidクライアントとのAPI連携実装中
+### [Now] AndroidクライアントとのAPI連携実装中
 
 
 ## 📱 AI-Powered Fraud App Detection System

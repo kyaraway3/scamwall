@@ -1,0 +1,37 @@
+# --- Security & Env ---
+.env
+*.log
+
+# アイデアメモ・ドラフト（非公開）
+idea_draft.md
+
+# データセット 
+*.csv
+
+# --- Python / ML ---
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+# モデルデータが大きい場合は除外
+models/*.pth
+models/*.pkl
+data/raw/
+
+# --- Android ---
+.gradle/
+build/
+local.properties
+*.apk
+*.ap_
+captures/
+
+# --- IDE & OS ---
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# 100MBを超える場合は無視推奨
+*.pth

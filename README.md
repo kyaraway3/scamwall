@@ -47,7 +47,7 @@ Scamwallは、Androidのアクセシビリティサービスを活用してGoogl
 ---
 
 ## 🏗 システムアーキテクチャ
-
+```text
 scamwall/
 ├── app/
 │   ├── main.py          # APIサーバー本体
@@ -56,7 +56,7 @@ scamwall/
 │   └── requirements.txt # 依存ライブラリ
 ├── data/                # 学習データ（非公開）
 └── .gitignore           # セキュリティ設定
-
+```
 | コンポーネント | 技術スタック | 役割 |
 | :--- | :--- | :--- |
 | **Android Client** | Kotlin, Accessibility Service | データ抽出 & 警告UI表示 |

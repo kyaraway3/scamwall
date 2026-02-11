@@ -6,14 +6,15 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import BertJapaneseTokenizer, BertModel
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, recall_score
-import gc  # ガベージコレクション用
-from tqdm import tqdm # 進捗バー
+import gc
+from tqdm import tqdm
+import os  # ★追加: ファイルサイズ確認用
 
 # --- 設定 ---
-BATCH_SIZE = 8       # GPUメモリ不足でエラーが出る場合はここを 8 や 4 に下げる
-EPOCHS = 3            # 学習回数
-LEARNING_RATE = 2e-5  # 学習率
-MAX_LEN = 128         # 文章の最大長（長くするとメモリを食う）
+BATCH_SIZE = 8       
+EPOCHS = 3            
+LEARNING_RATE = 2e-5  
+MAX_LEN = 128         
 MODEL_NAME = 'cl-tohoku/bert-base-japanese-v3'
 
 # --- デバイスの自動選択 ---
@@ -34,8 +35,6 @@ class AppDataset(Dataset):
         self.df = df
         self.tokenizer = tokenizer
         self.max_len = max_len
-        
-        # 権限リストの特定（簡易版：実際はもっと多くの権限をリストアップする）
         self.risky_perms = [
             "SYSTEM_ALERT_WINDOW", "RECEIVE_BOOT_COMPLETED", 
             "BIND_ACCESSIBILITY_SERVICE", "READ_CONTACTS"
@@ -46,15 +45,10 @@ class AppDataset(Dataset):
 
     def __getitem__(self, index):
         row = self.df.iloc[index]
-        
-        # テキストデータの処理
         text = str(row['description']) if pd.notna(row['description']) else ""
-        
-        # 権限データの処理（One-hotエンコーディング的なもの）
         perms_str = str(row['permissions']) if pd.notna(row['permissions']) else ""
         perm_vec = [1.0 if rp in perms_str else 0.0 for rp in self.risky_perms]
         
-        # BERT用トークナイズ
         encoding = self.tokenizer(
             text,
             add_special_tokens=True,
@@ -78,32 +72,18 @@ class FraudDetector(nn.Module):
     def __init__(self, n_meta_features):
         super(FraudDetector, self).__init__()
         self.bert = BertModel.from_pretrained(MODEL_NAME)
-        
-        # BERTの出力層直後にドロップアウトを入れる（過学習防止）
         self.drop = nn.Dropout(p=0.3)
-        
-        # メタデータ処理用の層
         self.meta_layer = nn.Linear(n_meta_features, 32)
-        
-        # 最終分類層 (BERTの768次元 + メタデータの32次元)
         self.out = nn.Linear(768 + 32, 1)
 
     def forward(self, input_ids, attention_mask, metadata):
-        # BERTの処理
         outputs = self.bert(
             input_ids=input_ids,
             attention_mask=attention_mask
         )
-        # pooler_outputは[CLS]トークンの埋め込みベクトル
         bert_out = self.drop(outputs.pooler_output)
-        
-        # メタデータの処理
         meta_out = torch.relu(self.meta_layer(metadata))
-        
-        # 結合
         combined = torch.cat((bert_out, meta_out), dim=1)
-        
-        # 最終出力
         return self.out(combined)
 
 # --- 3. 学習ループ関数 ---
@@ -111,9 +91,7 @@ def train_epoch(model, data_loader, loss_fn, optimizer, scheduler, n_examples):
     model = model.train()
     losses = []
     correct_predictions = 0
-    
-    # 混合精度学習のためのスケーラー
-    scaler = torch.amp.GradScaler('cuda',enabled=torch.cuda.is_available())
+    scaler = torch.amp.GradScaler('cuda', enabled=torch.cuda.is_available())
 
     for d in tqdm(data_loader, desc="Training"):
         input_ids = d["input_ids"].to(DEVICE)
@@ -123,18 +101,14 @@ def train_epoch(model, data_loader, loss_fn, optimizer, scheduler, n_examples):
 
         optimizer.zero_grad()
 
-        # 混合精度コンテキスト（メモリ節約＆高速化）
-        with torch.amp.autocast('cuda',enabled=torch.cuda.is_available()):
+        with torch.amp.autocast('cuda', enabled=torch.cuda.is_available()):
             outputs = model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 metadata=metadata
             )
-            # sigmoidで0~1にしてから損失計算したいが、
-            # BCEWithLogitsLossを使うので生の出力(logit)を渡すのが安定的
             loss = loss_fn(outputs, labels.unsqueeze(1))
 
-        # 誤差逆伝播
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
@@ -146,7 +120,6 @@ def train_epoch(model, data_loader, loss_fn, optimizer, scheduler, n_examples):
         correct_predictions += torch.sum(preds.flatten() == labels)
         losses.append(loss.item())
         
-        # GPUメモリキャッシュを適宜クリア（おまじない）
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
@@ -157,33 +130,32 @@ def main():
     try:
         # データ読み込み
         print("📂 データを読み込んでいます...")
-        df = pd.read_csv(r'C:\learn\scamwall\app_dataset_labeled.csv')
+        # パスは環境に合わせて適宜修正してください
+        if os.path.exists(r'C:\learn\scamwall\app_dataset_labeled.csv'):
+            csv_path = r'C:\learn\scamwall\app_dataset_labeled.csv'
+        else:
+            csv_path = 'app_dataset_labeled.csv' # カレントディレクトリ用
+            
+        df = pd.read_csv(csv_path)
         
-        # データ数が少なすぎるとエラーになるのでチェック
         if len(df) < 10:
-            print("⚠️ データが少なすぎます。data_collector.pyでもっと集めてください。")
+            print("⚠️ データが少なすぎます。")
             return
 
-        # 訓練用とテスト用に分割 (8:2)
         df_train, df_test = train_test_split(df, test_size=0.2, random_state=42)
-        
         tokenizer = BertJapaneseTokenizer.from_pretrained(MODEL_NAME)
         
-        # DataLoader作成
         train_dataset = AppDataset(df_train, tokenizer, MAX_LEN)
         test_dataset = AppDataset(df_test, tokenizer, MAX_LEN)
         
         train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-        test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE) # テスト時はシャッフル不要
+        test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE)
 
-        # モデル初期化
-        # 権限特徴量の数は AppDataset.risky_perms の長さと同じにする
         model = FraudDetector(n_meta_features=4) 
         model = model.to(DEVICE)
 
-        # オプティマイザ設定
         optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE)
-        loss_fn = nn.BCEWithLogitsLoss().to(DEVICE) # 2値分類用ロス関数
+        loss_fn = nn.BCEWithLogitsLoss().to(DEVICE)
 
         print("🔥 学習を開始します...")
         
@@ -193,31 +165,49 @@ def main():
 
             try:
                 train_acc, train_loss = train_epoch(
-                    model,
-                    train_loader,
-                    loss_fn,
-                    optimizer,
-                    None, # Schedulerは今回は省略
-                    len(df_train)
+                    model, train_loader, loss_fn, optimizer, None, len(df_train)
                 )
                 print(f'Train loss {train_loss} accuracy {train_acc}')
                 
             except RuntimeError as e:
                 if 'out of memory' in str(e):
-                    print("❌ GPUメモリ不足が発生しました！")
-                    print("対策: BATCH_SIZE を小さくしてください（現在: {}）".format(BATCH_SIZE))
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
+                    print("❌ GPUメモリ不足！BATCH_SIZEを下げてください。")
                     break
                 else:
                     raise e
 
-        print("✅ 学習完了。モデルを保存します。")
+        # 1. 通常モデルの保存
+        print("✅ 学習完了。オリジナルモデルを保存します。")
         torch.save(model.state_dict(), 'fraud_model.pth')
-        print("💾 fraud_model.pth として保存されました。")
+        
+        # --- ★ここから量子化処理 (Cloud Run 2GB制限対応) ---
+        print("\n📉 モデルを量子化（軽量化）しています...")
+        
+        # 量子化はCPU上で行う必要があるため、モデルをCPUへ移動
+        model.to('cpu')
+        model.eval()
+
+        # 動的量子化の適用 (Linear層をint8に変換)
+        # BERTのパラメータの大部分はLinear層なので、劇的に軽くなります
+        quantized_model = torch.quantization.quantize_dynamic(
+            model, 
+            {torch.nn.Linear},  # 対象とする層
+            dtype=torch.qint8
+        )
+
+        # ファイルサイズ比較用の出力
+        org_size = os.path.getsize('fraud_model.pth') / 1024 / 1024
+        print(f"📦 オリジナルサイズ: {org_size:.2f} MB")
+
+        # 量子化モデルの保存
+        torch.save(quantized_model.state_dict(), 'fraud_model_quantized.pth')
+        
+        q_size = os.path.getsize('fraud_model_quantized.pth') / 1024 / 1024
+        print(f"💾 量子化モデル保存完了: fraud_model_quantized.pth ({q_size:.2f} MB)")
+        print(f"🚀 圧縮率: {q_size/org_size*100:.1f}% (Cloud Run無料枠で動作可能です)")
 
     except FileNotFoundError:
-        print("エラー: app_dataset_labeled.csv が見つかりません。labeler.py を先に実行してください。")
+        print("エラー: app_dataset_labeled.csv が見つかりません。")
 
 if __name__ == "__main__":
     main()

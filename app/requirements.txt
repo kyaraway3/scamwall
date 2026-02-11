@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+transformers==4.46.3
+fugashi
+unidic-lite
+google-generativeai
+pydantic
+python-dotenv
+numpy<2
+pandas
+scikit-learn

@@ -49,13 +49,21 @@ Scamwallは、Androidのアクセシビリティサービスを活用してGoogl
 ## 🏗 システムアーキテクチャ
 ```text
 scamwall/
-├── app/
-│   ├── main.py          # APIサーバー本体
-│   ├── api.py           # 推論ロジック
-│   ├── Dockerfile       # クラウド環境定義
-│   └── requirements.txt # 依存ライブラリ
-├── data/                # 学習データ（非公開）
-└── .gitignore           # セキュリティ設定
+├── app/                        # バックエンド・AI関連の全ソースコード
+│   ├── main.py                 # FastAPIエンドポイント本体
+│   ├── api.py                  # 推論ロジック (BERT + Gemini)
+│   ├── train_model.py          # BERTモデルの学習・評価スクリプト
+│   ├── data_collector.py       # Playストアからのデータ収集ツール
+│   ├── labeler.py              # 収集データのラベリング支援ツール
+│   ├── test_api.py             # API接続テスト用スクリプト
+│   ├── check_gpu.py            # GPU利用環境の確認ツール
+│   ├── Dockerfile              # Cloud Runデプロイ用構成ファイル
+│   ├── requirements.txt        # 依存ライブラリ一覧
+│   ├── .env                    # APIキー等の機密情報 (Git非公開)
+│   └── *.pth                   # 学習済みモデルファイル (Git非公開)
+├── .gitignore                  # セキュリティ・除外設定
+├── README.md                   # 本ドキュメント
+└── *.csv                       # 学習用データセット (Git非公開)
 ```
 | コンポーネント | 技術スタック | 役割 |
 | :--- | :--- | :--- |
